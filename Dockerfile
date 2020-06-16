@@ -3,7 +3,7 @@ FROM ubuntu:18.04
 ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 python3-pip curl ca-certificates fontconfig locales unzip \
+    && apt-get install -y --no-install-recommends python3 python3-pip curl ca-certificates fontconfig locales unzip jq\
     && echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen \
     && locale-gen en_US.UTF-8 \
     && rm -rf /var/lib/apt/lists/*
