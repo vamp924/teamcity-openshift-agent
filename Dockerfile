@@ -42,9 +42,9 @@ ENV CONFIG_FILE=/data/teamcity_agent/conf/buildAgent.properties \
 LABEL dockerImage.teamcity.version="latest" \
       dockerImage.teamcity.buildNumber="latest"
 
-COPY run-agent.sh /run-agent.sh
-COPY run-services.sh /run-services.sh
-COPY dist/buildagent /opt/buildagent
+COPY context/run-agent.sh /run-agent.sh
+COPY context/run-agent-services.sh /run-services.sh
+COPY context/TeamCity /opt/buildagent
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends sudo && \
