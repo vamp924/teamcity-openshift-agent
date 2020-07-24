@@ -44,7 +44,7 @@ prepare_conf() {
 
 AGENT_DIST=/opt/buildagent
 
-CONFIG_DIR=/data/teamcity_agent/conf
+CONFIG_DIR=/opt/buildagent/conf
 
 LOG_DIR=/opt/buildagent/logs
 

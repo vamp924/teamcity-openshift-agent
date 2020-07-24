@@ -1,84 +1,61 @@
-FROM ubuntu:18.04
+FROM --platform=amd64 registry.access.redhat.com/ubi8/ubi-minimal
 
-ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
+ARG TEAMCITY_URL=http://84.201.174.166:8111
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 python3-pip curl ca-certificates fontconfig locales unzip jq\
-    && echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen \
-    && locale-gen en_US.UTF-8 \
-    && rm -rf /var/lib/apt/lists/*
+SHELL [ "/bin/bash", "-c" ]
 
-RUN pip3 install lxml requests
+# Install JRE and build tools
+RUN microdnf install java-1.8.0-openjdk-headless hostname git curl tar unzip && \
+    microdnf clean all
+ENV JRE_HOME /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.262.b10-0.el8_2.x86_64/jre
 
-# JDK preparation start
-
-ARG MD5SUM='7e9925dbe18506ce35e226c3b4d05613'
-ARG JDK_URL='https://corretto.aws/downloads/resources/8.252.09.1/amazon-corretto-8.252.09.1-linux-x64.tar.gz'
-
-RUN set -eux; \
-    curl -LfsSo /tmp/openjdk.tar.gz ${JDK_URL}; \
-    echo "${MD5SUM} */tmp/openjdk.tar.gz" | md5sum -c -; \
-    mkdir -p /opt/java/openjdk; \
-    cd /opt/java/openjdk; \
-    tar -xf /tmp/openjdk.tar.gz --strip-components=1; \
-    rm -rf /tmp/openjdk.tar.gz;
-
-ENV JAVA_HOME=/opt/java/openjdk \
-    JRE_HOME=/opt/java/openjdk/jre \
-    PATH="/opt/java/openjdk/bin:$PATH"
-
-RUN update-alternatives --install /usr/bin/java java ${JRE_HOME}/bin/java 1 && \
-    update-alternatives --set java ${JRE_HOME}/bin/java && \
-    update-alternatives --install /usr/bin/javac javac ${JRE_HOME}/../bin/javac 1 && \
-    update-alternatives --set javac ${JRE_HOME}/../bin/javac
-
-# JDK preparation end
-##################################
-
-
-ENV CONFIG_FILE=/data/teamcity_agent/conf/buildAgent.properties \
-    LANG=C.UTF-8
-
-LABEL dockerImage.teamcity.version="latest" \
-      dockerImage.teamcity.buildNumber="latest"
-
-COPY context/run-agent.sh /run-agent.sh
-COPY context/run-agent-services.sh /run-services.sh
-COPY context/TeamCity /opt/buildagent
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends sudo && \
+COPY run-agent.sh /run-agent.sh
+RUN curl -O ${TEAMCITY_URL}/update/buildAgentFull.zip && \
+    unzip buildAgentFull.zip \
+     -x *windows* \
+     -x *macosx* \
+     -x *solaris* \
+     -x *.bat \
+     -x *linux-x86-32* \
+     -x *linux-ppc-64* \
+     -d /opt/buildagent && \
+    rm buildAgentFull.zip && \
+    rm /opt/buildagent/conf/buildAgent.dist.properties && \
+    printf "\
+    # Required Agent Properties
+    serverUrl=${TEAMCITY_URL}/ \n\
+    name= \n\
+    workDir=../work \n\
+    tempDir=../temp \n\
+    systemDir=../system \n\
+    # Optional Agent Properties 
+    authorizationToken= \n\
+    # Custom Agent Properties
+    tools.curl= \n\
+    " > /opt/buildagent/conf/buildAgent.properties && \
     useradd -m buildagent && \
-    curl https://mirror.openshift.com/pub/openshift-v4/clients/oc/latest/linux/oc.tar.gz | tar -xz --to-stdout > /usr/local/bin/oc && \
-    chmod +x /usr/local/bin/oc && \
     chmod +x /opt/buildagent/bin/*.sh && \
-    chmod +x /run-agent.sh /run-services.sh && sync
+    chmod +x /run-agent.sh && \
+    mkdir -p /data/teamcity_agent/conf && \
+    mkdir -p /opt/buildagent/work && \
+    mkdir -p /opt/buildagent/system && \
+    mkdir -p /opt/buildagent/temp && \
+    mkdir -p /opt/buildagent/logs && \
+    mkdir -p /opt/buildagent/tools && \
+    chown -R buildagent:root /opt/buildagent && \
+    chown buildagent:root /run-agent.sh && \
+    chmod +x /opt/buildagent/bin/*.sh && \
+    chmod -R g+u /opt && sync
+ENV HOME=/opt/buildagent CONFIG_FILE=/opt/buildagent/conf/buildAgent.properties
 
-RUN mkdir -p /data/teamcity_agent/conf \
-    && mkdir -p /opt/buildagent/work \
-    && mkdir -p /opt/buildagent/system \
-    && mkdir -p /opt/buildagent/temp \
-    && mkdir -p /opt/buildagent/plugins \
-    && rm -Rf /opt/buildagent/plugins/* \
-    && mkdir -p /opt/buildagent/logs \
-    && mkdir -p /opt/buildagent/tools \
-    && chown -R buildagent:root /data/teamcity_agent/ \
-    && chown -R buildagent:root /opt/buildagent \
-    && chown buildagent:root /run-agent.sh \
-    && chown buildagent:root /run-services.sh \
-    && chmod +x /opt/buildagent/bin/*.sh \
-    && chown -R buildagent:root /data \
-    && chmod -R g+u /opt \
-    && chmod -R g+u /data
+# Add 'oc' binary
+ARG OPENSHIFT_DOWNLOADS_URL=https://downloads-openshift-console.apps-crc.testing
+RUN curl -k ${OPENSHIFT_DOWNLOADS_URL}/amd64/linux/oc.tar | tar -x -C /usr/local/bin && \
+    chmod a+x /usr/local/bin/oc && \
+    printf "\
+    tools.openshiftOriginClient= \n\
+    " >> $CONFIG_FILE
 
-VOLUME /data/teamcity_agent/conf
-VOLUME /opt/buildagent/work
-VOLUME /opt/buildagent/system
-VOLUME /opt/buildagent/temp
-VOLUME /opt/buildagent/logs
-VOLUME /opt/buildagent/tools
-VOLUME /opt/buildagent/plugins
-
+WORKDIR /opt/buildagent
 USER buildagent
-
-CMD ["/run-services.sh"]
+CMD [ "/run-agent.sh", "start" ]
