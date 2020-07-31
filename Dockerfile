@@ -10,7 +10,7 @@ RUN microdnf install java-1.8.0-openjdk-headless hostname git curl tar unzip && 
 ENV JRE_HOME /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.262.b10-0.el8_2.x86_64/jre
 
 COPY run-agent.sh /run-agent.sh
-RUN curl -O ${TEAMCITY_URL}/update/buildAgentFull.zip && \
+RUN curl -L -O ${TEAMCITY_URL}/update/buildAgentFull.zip && \
     unzip buildAgentFull.zip \
      -x *windows* \
      -x *macosx* \
@@ -31,7 +31,7 @@ RUN curl -O ${TEAMCITY_URL}/update/buildAgentFull.zip && \
     # Optional Agent Properties 
     authorizationToken= \n\
     # Custom Agent Properties
-    tools.curl= \n\
+    teamcity.tool.curl=/usr/bin/curl \n\
     " > /opt/buildagent/conf/buildAgent.properties && \
     useradd -m buildagent && \
     chmod +x /opt/buildagent/bin/*.sh && \
@@ -48,12 +48,27 @@ RUN curl -O ${TEAMCITY_URL}/update/buildAgentFull.zip && \
     chmod -R g+u /opt && sync
 ENV HOME=/opt/buildagent CONFIG_FILE=/opt/buildagent/conf/buildAgent.properties
 
-# Add 'oc' binary
-ARG OPENSHIFT_DOWNLOADS_URL=https://downloads-openshift-console.apps-crc.testing
-RUN curl -k ${OPENSHIFT_DOWNLOADS_URL}/amd64/linux/oc.tar | tar -x -C /usr/local/bin && \
+# Add 'oc' tool
+ARG OC_TAR_URL=https://downloads-openshift-console.apps-crc.testing/amd64/linux/oc.tar
+RUN curl -k ${OC_TAR_URL} | tar -x -C /usr/local/bin && \
     chmod a+x /usr/local/bin/oc && \
     printf "\
-    tools.openshiftOriginClient= \n\
+    teamcity.tool.oc=/usr/local/bin/oc \n\
+    " >> $CONFIG_FILE
+
+# Add 'openssl' tool
+RUN microdnf install openssl && \
+    microdnf clean all && \
+    printf "\
+    teamcity.tool.openssl=/usr/bin/openssl \n\
+    " >> $CONFIG_FILE
+
+# Add 'yq' tool
+ARG YQ_BINARY_URL=https://github.com/mikefarah/yq/releases/download/3.3.2/yq_linux_amd64
+RUN curl -L -o /usr/local/bin/yq ${YQ_BINARY_URL} && \
+    chmod a+x /usr/local/bin/yq && \
+    printf "\
+    teamcity.tool.yq=/usr/local/bin/yq \n\
     " >> $CONFIG_FILE
 
 WORKDIR /opt/buildagent
